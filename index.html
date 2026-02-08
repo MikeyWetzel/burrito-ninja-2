@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Burrito Ninja</title>
+  <style>
+    body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(to bottom, skyblue, lightblue); font-family: Arial, sans-serif; }
+    canvas { border: 2px solid #333; background: linear-gradient(to bottom, skyblue, lightgreen); cursor: crosshair; touch-action: none; max-width: 100vw; max-height: 100vh; }
+    #ui { position: absolute; top: 10px; left: 10px; color: white; font-size: 24px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); z-index: 10; }
+    #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 30px; border-radius: 10px; text-align: center; display: none; font-size: 32px; z-index: 20; }
+    button { font-size: 24px; padding: 10px 20px; margin-top: 10px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    Score: <span id="score">0</span> | Lives: <span id="lives">3</span> | High: <span id="highScore">0</span>
+  </div>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <div id="gameOver">
+    Game Over! Final Score: <span id="finalScore">0</span><br>
+    High Score: <span id="highScoreGO">0</span>
+    <br><button onclick="restart()">Play Again</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const livesEl = document.getElementById('lives');
+    const highScoreEl = document.getElementById('highScore');
+    const gameOverEl = document.getElementById('gameOver');
+    const finalScoreEl = document.getElementById('finalScore');
+    const highScoreGOEl = document.getElementById('highScoreGO');
+
+    let score = 0;
+    let lives = 3;
+    let highScore = parseInt(localStorage.getItem('burritoHighScore')) || 0;
+    highScoreEl.textContent = highScore;
+    highScoreGOEl.textContent = highScore;
+
+    let gameRunning = true;
+    let burritos = [];
+    let trail = [];
+    let mouse = {x: 0, y: 0};
+    let spawnTimer = 0;
+    let baseSpeed = 2;
+
+    // Resize canvas
+    function resizeCanvas() {
+      const size = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.9);
+      canvas.style.width = size + 'px';
+      canvas.style.height = size + 'px';
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('mousedown', handleStart);
+    canvas.addEventListener('touchstart', handleTouchStart, {passive: false});
+    canvas.addEventListener('touchmove', handleTouchMove, {passive: false});
+
+    function getMousePos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      if (e.touches) {
+        e = e.touches[0];
+      }
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+      };
+    }
+
+    function handleStart(e) {
+      e.preventDefault();
+      const pos = getMousePos(e);
+      mouse.x = pos.x;
+      mouse.y = pos.y;
+      trail = [{x: pos.x, y: pos.y}];
+    }
+
+    function handleMove(e) {
+      if (!gameRunning) return;
+      e.preventDefault();
+      const pos = getMousePos(e);
+      const prevX = mouse.x;
+      const prevY = mouse.y;
+      mouse.x = pos.x;
+      mouse.y = pos.y;
+      sliceCheck(prevX, prevY, mouse.x, mouse.y);
+      trail.push({x: mouse.x, y: mouse.y});
+      if (trail.length > 20) trail.shift();
+    }
+
+    function handleTouchStart(e) {
+      handleStart(e);
+    }
+
+    function handleTouchMove(e) {
+      handleMove(e);
+    }
+
+    function sliceCheck(x1, y1, x2, y2) {
+      const dist = Math.hypot(x2 - x1, y2 - y1);
+      if (dist < 5) return;
+
+      for (let i = burritos.length - 1; i >= 0; i--) {
+        const b = burritos[i];
+        if (b.sliced) continue;
+        if (lineCircleIntersect(x1, y1, x2, y2, b.x, b.y, b.r)) {
+          b.sliced = true;
+          score += Math.floor(10 + b.r);
+          scoreEl.textContent = score;
+          updateHighScore();
+          // Particles or effect
+          break;
+        }
+      }
+    }
+
+    function lineCircleIntersect(x1, y1, x2, y2, cx, cy, r) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const fx = x1 - cx;
+      const fy = y1 - cy;
+      const a = dx * dx + dy * dy;
+      const b = 2 * (fx * dx + fy * dy);
+      const c = fx * fx + fy * fy - r * r;
+      const discriminant = b * b - 4 * a * c;
+      return discriminant >= 0;
+    }
+
+    function spawnBurrito() {
+      const r = 25 + Math.random() * 20;
+      burritos.push({
+        x: r + Math.random() * (canvas.width - 2 * r),
+        y: -r * 1.5,
+        vx: (Math.random() - 0.5) * 1,
+        vy: baseSpeed + Math.random() * 1,
+        r,
+        sliced: false
+      });
+    }
+
+    function updateHighScore() {
+      if (score > highScore) {
+        highScore = score;
+        highScoreEl.textContent = highScore;
+        highScoreGOEl.textContent = highScore;
+        localStorage.setItem('burritoHighScore', highScore);
+      }
+    }
+
+    function update() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw trail
+      if (trail.length > 1) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 15;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(trail[0].x, trail[0].y);
+        for (let i = 1; i < trail.length; i++) {
+          ctx.lineTo(trail[i].x, trail[i].y);
+        }
+        ctx.stroke();
+      }
+
+      // Update and draw burritos
+      for (let i = burritos.length - 1; i >= 0; i--) {
+        const b = burritos[i];
+        b.x += b.vx;
+        b.y += b.vy;
+        b.vy += 0.05; // gravity-ish
+
+        // Bounce sides
+        if (b.x - b.r < 0 || b.x + b.r > canvas.width) b.vx *= -0.8;
+
+        // Draw burrito
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        // Tortilla
+        ctx.fillStyle = '#D2B48C';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, b.r, b.r * 0.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Filling
+        ctx.fillStyle = '#8B4513';
+        ctx.beginPath();
+        ctx.ellipse(0, 5, b.r * 0.8, b.r * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Emoji overlay
+        ctx.font = `bold ${b.r * 1.2}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🌯', 0, 0);
+        ctx.restore();
+
+        if (b.sliced) {
+          // Slice line
+          ctx.strokeStyle = '#FF0000';
+          ctx.lineWidth = 4;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(b.x - b.r * 0.7, b.y - b.r * 0.3);
+          ctx.lineTo(b.x + b.r * 0.7, b.y + b.r * 0.3);
+          ctx.stroke();
+          // Fade out
+          b.life = (b.life || 30) - 1;
+          if (b.life <= 0) {
+            burritos.splice(i, 1);
+            continue;
+          }
+        }
+
+        // Miss if bottom
+        if (b.y > canvas.height + b.r) {
+          burritos.splice(i, 1);
+          lives--;
+          livesEl.textContent = lives;
+          if (lives <= 0) {
+            gameOver();
+          }
+          continue;
+        }
+      }
+
+      // Spawn
+      spawnTimer++;
+      const spawnRate = Math.max(30, 90 - score / 10);
+      if (spawnTimer > spawnRate) {
+        spawnBurrito();
+        spawnTimer = 0;
+      }
+
+      if (gameRunning) {
+        requestAnimationFrame(update);
+      }
+    }
+
+    function gameOver() {
+      gameRunning = false;
+      finalScoreEl.textContent = score;
+      gameOverEl.style.display = 'block';
+      updateHighScore();
+    }
+
+    function restart() {
+      score = 0;
+      lives = 3;
+      burritos = [];
+      trail = [];
+      gameRunning = true;
+      spawnTimer = 0;
+      baseSpeed = 2;
+      scoreEl.textContent = score;
+      livesEl.textContent = lives;
+      gameOverEl.style.display = 'none';
+      update();
+    }
+
+    // Start game
+    canvas.dispatchEvent(new MouseEvent('mousedown', {bubbles: true})); // init
+    update();
+  </script>
+</body>
+</html>
